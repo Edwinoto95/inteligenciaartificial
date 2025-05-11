@@ -1,0 +1,14 @@
+{% extends "plantilla.html" %}
+{% load static %}
+{% block title %}Confirmar Eliminación - Regresión Lineal y Logística{% endblock %}
+{% block content %}
+<div class="text-center">
+    <h2 class="mb-4 fw-semibold">Confirmar Eliminación</h2>
+    <p class="fs-5">¿Está seguro que desea eliminar al paciente <strong>{{ paciente.nombre }}</strong>?</p>
+    <form method="post" class="d-inline-block">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger btn-lg me-3">Eliminar</button>
+        <a href="{% url 'lista_pacientes' %}" class="btn btn-secondary btn-lg">Cancelar</a>
+    </form>
+</div>
+{% endblock %}

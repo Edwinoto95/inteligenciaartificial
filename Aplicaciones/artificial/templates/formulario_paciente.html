@@ -1,0 +1,351 @@
+{% extends "plantilla.html" %}
+{% load static %}
+{% block title %}
+    {% if accion == 'crear' %}
+        Nuevo Paciente - Regresión Lineal y Logística
+    {% else %}
+        Editar Paciente - Regresión Lineal y Logística
+    {% endif %}
+{% endblock %}
+{% block content %}
+
+<!-- Botón Importar pacientes fijo abajo a la derecha -->
+<button id="btn_importar_pacientes"
+    style="
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 2100;
+        background: linear-gradient(135deg, #b9ffb7, #b2f7ef 90%);
+        border: none;
+        border-radius: 30px;
+        padding: 16px 32px;
+        font-weight: 700;
+        color: #1b5e20;
+        box-shadow: 0 6px 30px rgba(72,207,96,0.35);
+        cursor: pointer;
+        font-size: 1.25rem;
+        letter-spacing: 1.2px;
+        transition: background 0.3s, color 0.3s;
+        outline: none;
+        user-select: none;
+    ">
+    Importar pacientes
+</button>
+
+<input type="file" id="archivo_txt" accept=".txt" style="display:none;">
+
+<!-- Modal grande para mostrar la tabla de importación -->
+<div id="modal_importacion" style="
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 2200;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+    padding: 20px;
+">
+
+    <div style="
+        background: #f9fff9;
+        border-radius: 16px;
+        max-width: 90vw;
+        max-height: 85vh;
+        width: 100%;
+        box-shadow: 0 8px 40px rgba(72,207,96,0.4);
+        display: flex;
+        flex-direction: column;
+        padding: 24px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    ">
+
+        <h3 style="color: #2e7d32; margin-bottom: 16px; font-weight: 700; font-size: 1.8rem; text-align: center;">
+            Datos a importar
+        </h3>
+
+        <span id="archivo_nombre" style="color:#388e3c; font-weight: 600; margin-bottom: 12px; text-align: center;"></span>
+
+        <div style="overflow-x:auto; max-height:60vh; width:100%; margin-bottom:20px;">
+            <table class="table table-bordered" id="tabla_ejemplo" style="width:100%; min-width:900px; border-collapse: separate; border-spacing: 0;">
+                <thead style="background-color: #d0f0c0;">
+                    <tr>
+                        <th style="padding: 10px 12px; border-right: 1px solid #a8d5a3;">Nombre</th>
+                        <th style="padding: 10px 12px; border-right: 1px solid #a8d5a3;">Edad</th>
+                        <th style="padding: 10px 12px; border-right: 1px solid #a8d5a3;">IMC</th>
+                        <th style="padding: 10px 12px; border-right: 1px solid #a8d5a3;">Actividad</th>
+                        <th style="padding: 10px 12px; border-right: 1px solid #a8d5a3;">Presión</th>
+                        <th style="padding: 10px 12px; border-right: 1px solid #a8d5a3;">Antecedentes</th>
+                        <th style="padding: 10px 12px;">Glucosa</th>
+                    </tr>
+                </thead>
+                <tbody style="background-color: #f0fff0;">
+                    <!-- Filas se agregarán por JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display: flex; justify-content: center; gap: 20px;">
+            <button id="boton_guardar_masivo" type="submit" form="form_paciente" style="
+                background: linear-gradient(135deg, #66ffb2, #4ecdc4 90%);
+                border: none;
+                border-radius: 30px;
+                padding: 14px 36px;
+                font-weight: 700;
+                color: #003300;
+                box-shadow: 0 6px 20px rgba(102, 255, 178, 0.7);
+                cursor: pointer;
+                font-size: 1.15rem;
+                transition: transform 0.2s ease;
+                outline: none;
+                user-select: none;
+                min-width: 180px;
+            ">
+                Guardar inserciones masivas
+            </button>
+
+            <button id="boton_cancelar_importacion" type="button" style="
+                background: linear-gradient(135deg, #ff6b6b, #ff3b3b 90%);
+                border: none;
+                border-radius: 30px;
+                padding: 14px 36px;
+                font-weight: 700;
+                color: white;
+                box-shadow: 0 6px 20px rgba(255, 107, 107, 0.7);
+                cursor: pointer;
+                font-size: 1.15rem;
+                transition: transform 0.2s ease;
+                outline: none;
+                user-select: none;
+                min-width: 180px;
+            ">
+                Cancelar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Formulario principal -->
+<h2 class="mb-4 fw-semibold">
+    {% if accion == 'crear' %}Agregar Nuevo Paciente{% else %}Editar Paciente{% endif %}
+</h2>
+
+<form method="post" class="needs-validation" novalidate id="form_paciente">
+    {% csrf_token %}
+    
+    <!-- Campo oculto para enviar los datos cargados en JSON -->
+    <input type="hidden" name="datos_masivos" id="datos_masivos" value="">
+
+    <div class="row g-3">
+        <!-- Aquí va todo tu formulario original sin cambios -->
+        <!-- Nombre -->
+        <div class="col-md-6">
+            <label for="nombre" class="form-label fw-semibold">Nombre completo</label>
+            <input type="text" class="form-control" id="nombre" name="nombre" required
+                value="{{ paciente.nombre|default_if_none:'' }}" placeholder="Ej: Juan Pérez">
+            <div class="invalid-feedback">Por favor ingrese el nombre.</div>
+        </div>
+        <!-- Edad -->
+        <div class="col-md-3">
+            <label for="edad" class="form-label fw-semibold">Edad (años)</label>
+            <input type="number" class="form-control" id="edad" name="edad" min="0" max="120" required
+                value="{{ paciente.edad|default_if_none:'' }}" placeholder="0 - 120">
+            <div class="form-text">
+                Rango recomendado: <strong>0 a 120 años</strong>. Edad avanzada puede aumentar riesgo.
+            </div>
+            <div class="invalid-feedback">Ingrese una edad válida entre 0 y 120 años.</div>
+        </div>
+        <!-- IMC -->
+        <div class="col-md-3">
+            <label for="imc" class="form-label fw-semibold">Índice de Masa Corporal (IMC)</label>
+            <input type="number" step="0.01" class="form-control" id="imc" name="imc" min="10" max="60" required
+                value="{{ paciente.imc|default_if_none:'' }}" placeholder="10.00 - 60.00">
+            <div class="form-text">
+                Rango típico: <strong>18.5 a 24.9</strong> (normal). Valores > 25 indican sobrepeso y riesgo aumentado.
+            </div>
+            <div class="invalid-feedback">Ingrese un IMC válido entre 10 y 60.</div>
+        </div>
+        <!-- Actividad física semanal -->
+        <div class="col-md-4">
+            <label for="actividad_fisica" class="form-label fw-semibold">Actividad física semanal (horas)</label>
+            <input type="number" step="0.01" class="form-control" id="actividad_fisica" name="actividad_fisica" min="0" max="168" required
+                value="{{ paciente.actividad_fisica|default_if_none:'' }}" placeholder="0.00 - 168.00">
+            <div class="form-text">
+                Rango: <strong>0 a 168 horas</strong>. Se recomiendan al menos <strong>2.5 horas</strong> semanales de actividad moderada para reducir riesgo.
+            </div>
+            <div class="invalid-feedback">Ingrese horas válidas entre 0 y 168.</div>
+        </div>
+        <!-- Presión arterial sistólica -->
+        <div class="col-md-4">
+            <label for="presion_arterial" class="form-label fw-semibold">Presión arterial sistólica (mmHg)</label>
+            <input type="number" class="form-control" id="presion_arterial" name="presion_arterial" min="70" max="250" required
+                value="{{ paciente.presion_arterial|default_if_none:'' }}" placeholder="70 - 250">
+            <div class="form-text">
+                Rango normal: <strong>90 a 120 mmHg</strong>. Valores > 130 mmHg indican hipertensión y mayor riesgo.
+            </div>
+            <div class="invalid-feedback">Ingrese un valor válido entre 70 y 250 mmHg.</div>
+        </div>
+        <!-- Antecedentes familiares -->
+        <div class="col-md-4">
+            <label for="antecedentes_familiares" class="form-label fw-semibold">Antecedentes familiares de diabetes</label>
+            <select class="form-select" id="antecedentes_familiares" name="antecedentes_familiares" required>
+                <option value="" disabled selected>Seleccione...</option>
+                <option value="True" {% if paciente.antecedentes_familiares %}selected{% endif %}>Sí</option>
+                <option value="False" {% if paciente.antecedentes_familiares is not None and not paciente.antecedentes_familiares %}selected{% endif %}>No</option>
+            </select>
+            <div class="invalid-feedback">Seleccione una opción.</div>
+        </div>
+        <!-- Nivel de glucosa en ayunas -->
+        <div class="col-md-6">
+            <label for="glucosa_ayunas" class="form-label fw-semibold">Nivel de glucosa en ayunas (mg/dL)</label>
+            <input type="number" step="0.01" class="form-control" id="glucosa_ayunas" name="glucosa_ayunas"
+                value="{{ paciente.glucosa_ayunas|default_if_none:'' }}" placeholder="70.00 - 200.00">
+            <div class="form-text">
+                Valores normales: <strong>70 - 99 mg/dL</strong>.<br>
+                Prediabetes: <strong>100 - 125 mg/dL</strong>.<br>
+                Diabetes probable: ≥ <strong>126 mg/dL</strong> en dos pruebas distintas.<br>
+                Si deja vacío, se calculará automáticamente.
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <!-- Botón para guardar el registro individual -->
+        <button type="submit" class="btn btn-primary btn-lg me-2" id="boton_guardar_individual" {% if accion != 'crear' %}style="display:none;"{% endif %}>
+            {% if accion == 'crear' %}Guardar Paciente{% else %}Actualizar Paciente{% endif %}
+        </button>
+
+        <a href="{% url 'lista_pacientes' %}" class="btn btn-secondary btn-lg">Cancelar</a>
+    </div>
+</form>
+
+<script>
+// Bootstrap validation
+(() => {
+  'use strict'
+  const forms = document.querySelectorAll('.needs-validation')
+  Array.from(forms).forEach(form => {
+    form.addEventListener('submit', event => {
+      // Si se está enviando el formulario con datos masivos, no validar campos individuales
+      const datosMasivos = document.getElementById('datos_masivos').value;
+      if (datosMasivos) {
+        // Permitir enviar sin validar el formulario individual
+        return;
+      }
+      if (!form.checkValidity()) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      form.classList.add('was-validated')
+    }, false)
+  })
+})()
+
+// Variables y elementos
+const inputArchivo = document.getElementById('archivo_txt');
+const botonImportar = document.getElementById('btn_importar_pacientes');
+const modalImportacion = document.getElementById('modal_importacion');
+const archivoNombre = document.getElementById('archivo_nombre');
+const botonGuardarMasivo = document.getElementById('boton_guardar_masivo');
+const botonCancelarImportacion = document.getElementById('boton_cancelar_importacion');
+const tablaEjemplo = document.getElementById('tabla_ejemplo');
+const tbodyTabla = tablaEjemplo.querySelector('tbody');
+const campoDatosMasivos = document.getElementById('datos_masivos');
+const botonGuardarIndividual = document.getElementById('boton_guardar_individual');
+
+let datosEjemplo = [];
+
+// Abrir selector archivo al hacer clic en botón Importar
+botonImportar.addEventListener('click', () => {
+    inputArchivo.click();
+});
+
+// Procesar archivo al seleccionar
+inputArchivo.addEventListener('change', () => {
+    const archivo = inputArchivo.files[0];
+    if (archivo) {
+        archivoNombre.textContent = archivo.name;
+        procesarArchivo(archivo);
+        abrirModal();
+    } else {
+        limpiarImportacion();
+    }
+});
+
+function procesarArchivo(archivo) {
+    const lector = new FileReader();
+    lector.onload = function(e) {
+        const lineas = e.target.result.split('\n').filter(l => l.trim() !== '');
+        datosEjemplo = [];
+        for (let i = 1; i < lineas.length; i++) {
+            const campos = lineas[i].split(',');
+            if (campos.length >= 7) {
+                datosEjemplo.push({
+                    nombre: campos[0].trim(),
+                    edad: campos[1].trim(),
+                    imc: campos[2].trim(),
+                    actividad_fisica: campos[3].trim(),
+                    presion_arterial: campos[4].trim(),
+                    antecedentes_familiares: campos[5].trim(),
+                    glucosa_ayunas: campos[6].trim()
+                });
+            }
+        }
+        mostrarTablaEjemplo();
+        campoDatosMasivos.value = JSON.stringify(datosEjemplo);
+        botonGuardarMasivo.style.display = datosEjemplo.length ? 'inline-block' : 'none';
+        botonGuardarIndividual.style.display = 'none';
+    };
+    lector.readAsText(archivo);
+}
+
+function mostrarTablaEjemplo() {
+    tbodyTabla.innerHTML = '';
+    datosEjemplo.forEach(dato => {
+        const fila = document.createElement('tr');
+        ['nombre', 'edad', 'imc', 'actividad_fisica', 'presion_arterial', 'antecedentes_familiares', 'glucosa_ayunas'].forEach(campo => {
+            const td = document.createElement('td');
+            td.textContent = dato[campo];
+            td.style.padding = '8px 12px';
+            td.style.borderRight = '1px solid #a8d5a3';
+            fila.appendChild(td);
+        });
+        // Eliminar borde derecho del último td
+        if(fila.lastChild) fila.lastChild.style.borderRight = 'none';
+        tbodyTabla.appendChild(fila);
+    });
+    tablaEjemplo.style.display = datosEjemplo.length ? 'table' : 'none';
+}
+
+function abrirModal() {
+    modalImportacion.style.display = 'flex';
+}
+
+function cerrarModal() {
+    modalImportacion.style.display = 'none';
+    limpiarImportacion();
+}
+
+botonCancelarImportacion.addEventListener('click', cerrarModal);
+
+// Cerrar modal si se hace click fuera del contenido
+modalImportacion.addEventListener('click', (e) => {
+    if (e.target === modalImportacion) {
+        cerrarModal();
+    }
+});
+
+function limpiarImportacion() {
+    datosEjemplo = [];
+    campoDatosMasivos.value = '';
+    archivoNombre.textContent = '';
+    tablaEjemplo.style.display = 'none';
+    botonGuardarMasivo.style.display = 'none';
+    botonGuardarIndividual.style.display = '';
+    inputArchivo.value = '';
+}
+
+</script>
+
+{% endblock %}
