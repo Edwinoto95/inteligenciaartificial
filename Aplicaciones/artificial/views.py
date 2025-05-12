@@ -381,9 +381,13 @@ def api_predecir(request):
             return JsonResponse({'error': str(e)}, status=400)
     return JsonResponse({'error': 'Método no permitido'}, status=405)
 
+
+
+
 def ver_estadisticas(request):
     if Paciente.objects.count() < 5:
         return render(request, 'estadisticas.html', {'error': 'Se necesitan al menos 5 pacientes para generar estadísticas'})
+    
     pacientes = Paciente.objects.all()
     data = []
     for p in pacientes:
@@ -400,7 +404,7 @@ def ver_estadisticas(request):
 
     # Matriz de correlación
     correlacion = df.corr()
-    fig, ax = plt.subplots(figsize=(8,6))
+    fig, ax = plt.subplots(figsize=(10,8))
     sns.heatmap(correlacion, annot=True, cmap='coolwarm', ax=ax)
     ax.set_title('Matriz de Correlación entre Variables')
     buf = io.BytesIO()
@@ -408,48 +412,107 @@ def ver_estadisticas(request):
     plt.savefig(buf, format='png')
     plt.close(fig)
     buf.seek(0)
-    img_str = base64.b64encode(buf.read()).decode('utf-8')
+    img_correlacion = base64.b64encode(buf.read()).decode('utf-8')
 
-    # Regresión Lineal
-    fig_lin, ax_lin = plt.subplots(figsize=(7, 5))
-    X_lin = df[['imc']]
-    y_lin = df['glucosa_ayunas']
-    model_lin = LinearRegression()
-    model_lin.fit(X_lin, y_lin)
-    y_pred_lin = model_lin.predict(X_lin)
-    ax_lin.scatter(X_lin, y_lin, color='blue', label='Datos reales')
-    ax_lin.plot(X_lin, y_pred_lin, color='red', linewidth=2, label='Ajuste lineal')
-    ax_lin.set_xlabel('IMC')
-    ax_lin.set_ylabel('Glucosa en ayunas')
-    ax_lin.set_title('Regresión Lineal: IMC vs Glucosa')
-    ax_lin.legend()
-    buf_lin = io.BytesIO()
-    plt.tight_layout()
-    plt.savefig(buf_lin, format='png')
-    plt.close(fig_lin)
-    buf_lin.seek(0)
-    img_lin_str = base64.b64encode(buf_lin.read()).decode('utf-8')
+    # Múltiples gráficos de Regresión Lineal
+    regresion_plots = []
+    variables_x = ['edad', 'imc', 'actividad_fisica', 'presion_arterial']
+    
+    for var_x in variables_x:
+        fig_lin, ax_lin = plt.subplots(figsize=(7, 5))
+        X_lin = df[[var_x]]
+        y_lin = df['glucosa_ayunas']
+        
+        # Ajuste de regresión lineal
+        model_lin = LinearRegression()
+        model_lin.fit(X_lin, y_lin)
+        y_pred_lin = model_lin.predict(X_lin)
+        
+        # Calcular R-squared
+        r_squared = r2_score(y_lin, y_pred_lin)
+        
+        # Graficar
+        ax_lin.scatter(X_lin, y_lin, color='blue', alpha=0.6, label='Datos reales')
+        ax_lin.plot(X_lin, y_pred_lin, color='red', linewidth=2, 
+                    label=f'Ajuste lineal (R² = {r_squared:.2f})')
+        ax_lin.set_xlabel(var_x.replace('_', ' ').title())
+        ax_lin.set_ylabel('Glucosa en ayunas')
+        ax_lin.set_title(f'Regresión Lineal: {var_x.replace("_", " ").title()} vs Glucosa')
+        ax_lin.legend()
+        
+        # Guardar gráfico
+        buf_lin = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf_lin, format='png')
+        plt.close(fig_lin)
+        buf_lin.seek(0)
+        img_lin_str = base64.b64encode(buf_lin.read()).decode('utf-8')
+        
+        # Guardar información del gráfico
+        regresion_plots.append({
+            'variable': var_x,
+            'grafico': f'data:image/png;base64,{img_lin_str}',
+            'r_squared': r_squared
+        })
 
-    # Regresión Logística (forzar dos clases para evitar error)
+    # Regresión Logística con matriz de confusión
+    # Preparar datos para el modelo
     y_log = df['riesgo_diabetes']
-    X_log = df[['glucosa_ayunas']]
-    if y_log.nunique() == 1:
-        nueva_fila_y = pd.Series([1 - y_log.iloc[0]])
-        nueva_fila_X = pd.DataFrame({'glucosa_ayunas': [df['glucosa_ayunas'].mean()]})
-        y_log = pd.concat([y_log, nueva_fila_y], ignore_index=True)
-        X_log = pd.concat([X_log, nueva_fila_X], ignore_index=True)
-
+    X_log = df[['glucosa_ayunas', 'imc', 'edad', 'presion_arterial']]
+    
+    # Dividir datos en entrenamiento y prueba
+    X_train, X_test, y_train, y_test = train_test_split(X_log, y_log, test_size=0.3, random_state=42)
+    
+    # Escalar características
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # Entrenar modelo de regresión logística
+    model_log = LogisticRegression(random_state=42)
+    model_log.fit(X_train_scaled, y_train)
+    
+    # Predicciones
+    y_pred = model_log.predict(X_test_scaled)
+    
+    # Crear matriz de confusión
+    cm = confusion_matrix(y_test, y_pred)
+    
+    # Graficar matriz de confusión
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=['Sin Riesgo', 'Con Riesgo'],
+                yticklabels=['Sin Riesgo', 'Con Riesgo'])
+    plt.title('Matriz de Confusión - Predicción de Riesgo de Diabetes')
+    plt.xlabel('Predicción')
+    plt.ylabel('Valor Real')
+    buf_cm = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf_cm, format='png')
+    plt.close()
+    buf_cm.seek(0)
+    img_cm_str = base64.b64encode(buf_cm.read()).decode('utf-8')
+    
+    # Generar reporte de clasificación
+    reporte_clasificacion = classification_report(y_test, y_pred, 
+                                                  target_names=['Sin Riesgo', 'Con Riesgo'])
+    
+    # Graficar Regresión Logística (probabilidad de glucosa)
     fig_log, ax_log = plt.subplots(figsize=(7, 5))
-    model_log = LogisticRegression()
-    model_log.fit(X_log, y_log)
-    x_vals = np.linspace(X_log.min()[0], X_log.max()[0], 200).reshape(-1, 1)
-    y_prob = model_log.predict_proba(x_vals)[:, 1]
-    ax_log.scatter(X_log, y_log, color='green', alpha=0.5, label='Datos reales')
+    x_vals = np.linspace(X_log['glucosa_ayunas'].min(), X_log['glucosa_ayunas'].max(), 200).reshape(-1, 1)
+    x_vals_scaled = scaler.transform(np.column_stack([x_vals, 
+                                                      np.full_like(x_vals, X_log['imc'].mean()),
+                                                      np.full_like(x_vals, X_log['edad'].mean()),
+                                                      np.full_like(x_vals, X_log['presion_arterial'].mean())]))
+    y_prob = model_log.predict_proba(x_vals_scaled)[:, 1]
+    
+    ax_log.scatter(X_log['glucosa_ayunas'], y_log, color='green', alpha=0.5, label='Datos reales')
     ax_log.plot(x_vals, y_prob, color='orange', linewidth=2, label='Probabilidad estimada')
     ax_log.set_xlabel('Glucosa en ayunas')
     ax_log.set_ylabel('Probabilidad de riesgo')
     ax_log.set_title('Regresión Logística: Glucosa vs Riesgo')
     ax_log.legend()
+    
     buf_log = io.BytesIO()
     plt.tight_layout()
     plt.savefig(buf_log, format='png')
@@ -459,9 +522,11 @@ def ver_estadisticas(request):
 
     contexto = {
         'correlacion': correlacion.to_html(),
-        'grafico_correlacion': f'data:image/png;base64,{img_str}',
-        'grafico_regresion_lineal': f'data:image/png;base64,{img_lin_str}',
+        'grafico_correlacion': f'data:image/png;base64,{img_correlacion}',
+        'graficos_regresion_lineal': regresion_plots,
         'grafico_regresion_logistica': f'data:image/png;base64,{img_log_str}',
+        'matriz_confusion': f'data:image/png;base64,{img_cm_str}',
+        'reporte_clasificacion': reporte_clasificacion.replace('\n', '<br>'),
         'total_pacientes': Paciente.objects.count()
     }
     return render(request, 'estadisticas.html', contexto)
